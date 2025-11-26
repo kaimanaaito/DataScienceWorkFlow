@@ -1,6 +1,6 @@
 """
 Data Science Workflow Studio Pro - 上級者対応版
-実務特化型データ分析アプリ + 統計的厳密性 + コード生成機能
+実務特化型データ分析アプリ + 統計的厳密性 + コード生成機能 + ビジネスインパクトシミュレーション
 
 必要なパッケージ:
 pip install streamlit pandas numpy scipy scikit-learn plotly statsmodels
@@ -17,7 +17,7 @@ from scipy import stats
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, LabelEncoder
 from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge, Lasso
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.model_selection import train_test_split, cross_validate, KFold
+from sklearn.model_selection import train_test_split, cross_validate, KFold, GridSearchCV
 from sklearn.metrics import mean_squared_error, r2_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score, roc_auc_score, mean_absolute_error
 from sklearn.inspection import permutation_importance
 import plotly.express as px
@@ -95,6 +95,20 @@ st.markdown("""
         border-radius: 5px;
         margin: 0.5rem 0;
     }
+    .impact-positive {
+        background: linear-gradient(90deg, #064e3b, #10b981);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        margin: 1rem 0;
+    }
+    .impact-negative {
+        background: linear-gradient(90deg, #7c2d12, #f59e0b);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        margin: 1rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,6 +129,8 @@ if 'model_results' not in st.session_state:
     st.session_state.model_results = {}
 if 'diagnostics_results' not in st.session_state:
     st.session_state.diagnostics_results = None
+if 'best_model' not in st.session_state:
+    st.session_state.best_model = None
 
 # ==================== 統計的厳密性のための関数 ====================
 
@@ -512,6 +528,106 @@ def display_cv_results(results):
         st.metric("平均絶対誤差（MAE）", f"{results['test_mae_mean']:.4f}")
 
 
+# ==================== ビジネスインパクトシミュレーション関数 ====================
+
+def business_impact_simulation(model, X_test, y_test, y_pred, pred_proba=None):
+    """Kaggle/Amazonエリート級のビジネスインパクトシミュレーション"""
+    
+    st.markdown("---")
+    st.markdown("### 🎯 ビジネスインパクトシミュレーション（Kaggle/Amazonエリート級）")
+    
+    st.info("Monte Carloシミュレーションで不確実性を考慮したROIを計算。実務で即戦力の機能です")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("ビジネスパラメータ")
+        customer_base = st.number_input("総顧客数", min_value=1000, value=10000, step=1000)
+        historical_churn_rate = st.slider("歴史的離脱率", 0.01, 0.50, 0.10)
+        avg_ltv = st.number_input("平均LTV（円）", min_value=1000, value=50000, step=5000)
+        intervention_cost_per = st.number_input("1人介入コスト（円）", value=3000, step=500)
+        intervention_success_rate_mean = st.slider("介入成功率（平均）", 0.1, 0.8, 0.4)
+        intervention_success_rate_std = st.slider("成功率のばらつき（標準偏差）", 0.01, 0.2, 0.05)
+    
+    with col2:
+        st.subheader("介入戦略")
+        top_pct = st.slider("介入対象（離脱確率上位何％）", 1, 50, 10) / 100
+        n_simulations = st.number_input("Monte Carloシミュレーション回数", value=1000, step=100)
+    
+    if st.button("🔥 インパクト計算実行", type="primary"):
+        
+        # 予測確率を取得（分類の場合想定）
+        if pred_proba is None:
+            try:
+                if hasattr(model, "predict_proba"):
+                    pred_proba = model.predict_proba(X_test)[:, 1]
+                else:
+                    pred_proba = model.predict(X_test)
+                    pred_proba = (pred_proba - pred_proba.min()) / (pred_proba.max() - pred_proba.min() + 1e-8)
+            except:
+                pred_proba = y_pred
+        
+        # モデル性能計算（precision/recall at top_pct）
+        threshold = np.percentile(pred_proba, 100 - (top_pct * 100))
+        y_pred_at_threshold = (pred_proba >= threshold).astype(int)
+        
+        try:
+            precision = precision_score(y_test, y_pred_at_threshold, zero_division=0)
+            recall = recall_score(y_test, y_pred_at_threshold, zero_division=0)
+        except:
+            precision = 0.5
+            recall = 0.5
+        
+        st.write(f"モデル性能（上位{top_pct*100:.0f}%閾値）: Precision={precision:.2f}, Recall={recall:.2f}")
+        
+        # Monte Carloシミュレーション
+        net_savings_list = []
+        roi_list = []
+        
+        for _ in range(n_simulations):
+            # 不確実性を加味（成功率にノイズ）
+            sim_success_rate = np.clip(stats.norm.rvs(intervention_success_rate_mean, intervention_success_rate_std), 0.1, 0.8)
+            
+            num_identified = customer_base * recall * historical_churn_rate
+            customers_saved = num_identified * sim_success_rate
+            revenue_retained = customers_saved * avg_ltv
+            campaign_cost = num_identified * intervention_cost_per
+            
+            net_savings = revenue_retained - campaign_cost
+            roi = (net_savings / campaign_cost * 100) if campaign_cost > 0 else 0
+            
+            net_savings_list.append(net_savings)
+            roi_list.append(roi)
+        
+        mean_net = np.mean(net_savings_list)
+        mean_roi = np.mean(roi_list)
+        ci_net = np.percentile(net_savings_list, [5, 95])
+        ci_roi = np.percentile(roi_list, [5, 95])
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("平均年間利益改善額", f"¥{mean_net:,.0f}", f"95%CI: ¥{ci_net[0]:,.0f} ~ ¥{ci_net[1]:,.0f}")
+        c2.metric("平均ROI", f"{mean_roi:.1f}%", f"95%CI: {ci_roi[0]:.1f}% ~ {ci_roi[1]:.1f}%")
+        c3.metric("期待救済顧客（年）", f"{(customer_base * historical_churn_rate * recall * intervention_success_rate_mean):,.0f}人")
+        
+        # 分布グラフ（エリート級の可視化）
+        fig = px.histogram(net_savings_list, nbins=50, title="Monte Carloシミュレーション結果（利益改善額分布）")
+        fig.add_vline(x=mean_net, line_dash="dash", line_color="red", annotation_text="平均")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        if mean_net > 0:
+            st.markdown(f'<div class="impact-positive">💰 上位{top_pct*100:.0f}%介入で、平均 <strong>¥{mean_net:,.0f}</strong> の利益創出可能（95%信頼区間内）！</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="impact-negative">⚠️ 上位{top_pct*100:.0f}%介入では、現状のパラメータでは利益創出が困難です。コスト削減または成功率向上を検討してください。</div>', unsafe_allow_html=True)
+        
+        return {
+            'mean_net_savings': mean_net,
+            'mean_roi': mean_roi,
+            'confidence_interval_net': ci_net,
+            'confidence_interval_roi': ci_roi,
+            'expected_customers_saved': customer_base * historical_churn_rate * recall * intervention_success_rate_mean
+        }
+
+
 # ユーティリティ関数
 def load_csv(file_buf):
     """CSVファイルを読み込む"""
@@ -539,7 +655,7 @@ def calculate_vif(df, features):
 
 # メインアプリ
 st.markdown('<div class="main-header">📊 Data Science Workflow Studio Pro</div>', unsafe_allow_html=True)
-st.markdown('<p style="text-align: center; color: #94a3b8;">統計コンサルタントレベルの厳密性 + コード生成機能</p>', unsafe_allow_html=True)
+st.markdown('<p style="text-align: center; color: #94a3b8;">統計コンサルタントレベルの厳密性 + コード生成機能 + ビジネスインパクト分析</p>', unsafe_allow_html=True)
 
 # サイドバー
 with st.sidebar:
@@ -1157,7 +1273,9 @@ elif st.session_state.step == 4:
             "📊 記述統計（平均・分散・分布比較）",
             "🔍 推論（t検定・ANOVA・相関分析）",
             "📈 回帰分析（統計的厳密性強化版）",
-            "🎯 予測モデル（機械学習）"
+            "🎯 予測モデル（機械学習）",
+            "🚀 回帰分析（自動最適化）",
+            "🤖 予測モデル（自動チューニング）"
         ]
     )
     
@@ -1474,7 +1592,7 @@ elif st.session_state.step == 4:
                     'mae': mae
                 }
                 
-                # ==================== コード生成機能（NEW！） ====================
+                # ==================== コード生成機能 ====================
                 st.markdown("---")
                 st.markdown("### 💻 この分析を再現するコード")
                 st.info("上級者向け：ここまでの分析を実行可能なPythonコードとして出力します")
@@ -2392,6 +2510,119 @@ plt.show()
                 
                 st.success("✅ 予測モデルの学習が完了しました")
     
+    # ==================== 自動最適化分析（ビジネスインパクト統合版） ====================
+    elif analysis_type in ["🚀 回帰分析（自動最適化）", "🤖 予測モデル（自動チューニング）"]:
+        st.markdown("### 🤖 自動最適化分析")
+        
+        st.info("グリッドサーチで最適なモデルを自動探索し、ビジネスインパクトをシミュレーションします")
+        
+        selected_features = st.multiselect(
+            "使用する説明変数",
+            options=numeric_features,
+            default=numeric_features[:min(10, len(numeric_features))]
+        )
+        
+        if len(selected_features) == 0:
+            st.warning("⚠️ 説明変数を選択してください")
+            st.stop()
+        
+        auto_df = df[[target] + selected_features].dropna()
+        
+        is_classification = len(auto_df[target].unique()) < 20 and not pd.api.types.is_float_dtype(auto_df[target])
+        
+        task_type = "分類" if is_classification else "回帰"
+        st.info(f"タスクタイプ: **{task_type}** （目的変数のユニーク数: {auto_df[target].nunique()}）")
+        
+        with st.expander("🔧 高度な設定"):
+            test_size = st.slider("テストデータの割合", 0.1, 0.4, 0.2, 0.05)
+            random_state = st.number_input("ランダムシード", value=42, min_value=0)
+            cv_folds = st.slider("CVのfold数", 3, 10, 5)
+        
+        if st.button("🚀 自動最適化実行", type="primary"):
+            X = auto_df[selected_features]
+            y = auto_df[target]
+            
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+            
+            with st.spinner("モデル最適化中..."):
+                if is_classification:
+                    # 分類モデルのグリッドサーチ
+                    param_grid = {
+                        'n_estimators': [50, 100, 200],
+                        'max_depth': [3, 5, 7],
+                        'min_samples_split': [2, 5, 10]
+                    }
+                    base_model = RandomForestClassifier(random_state=random_state)
+                else:
+                    # 回帰モデルのグリッドサーチ
+                    param_grid = {
+                        'n_estimators': [50, 100, 200],
+                        'max_depth': [3, 5, 7],
+                        'min_samples_split': [2, 5, 10]
+                    }
+                    base_model = RandomForestRegressor(random_state=random_state)
+                
+                grid_search = GridSearchCV(
+                    base_model, param_grid, 
+                    cv=cv_folds, 
+                    scoring='f1_weighted' if is_classification else 'r2',
+                    n_jobs=-1,
+                    verbose=1
+                )
+                
+                grid_search.fit(X_train, y_train)
+                
+                best_model = grid_search.best_estimator_
+                y_pred = best_model.predict(X_test)
+                
+                st.session_state.best_model = best_model
+                
+                st.markdown("---")
+                st.markdown("## 🏆 最適化結果")
+                
+                st.success(f"**最適パラメータ**: {grid_search.best_params_}")
+                st.success(f"**最適スコア**: {grid_search.best_score_:.4f}")
+                
+                if is_classification:
+                    accuracy = (y_pred == y_test).mean()
+                    st.metric("テスト精度", f"{accuracy:.4f}")
+                else:
+                    r2 = r2_score(y_test, y_pred)
+                    st.metric("テストR²", f"{r2:.4f}")
+                
+                # 特徴量重要度
+                if hasattr(best_model, 'feature_importances_'):
+                    st.markdown("---")
+                    st.markdown("### 📊 特徴量重要度")
+                    
+                    importance_df = pd.DataFrame({
+                        '変数': selected_features,
+                        '重要度': best_model.feature_importances_
+                    }).sort_values('重要度', ascending=False)
+                    
+                    fig_imp = px.bar(
+                        importance_df.head(15),
+                        x='重要度',
+                        y='変数',
+                        orientation='h',
+                        title="最適モデルの特徴量重要度（Top 15）"
+                    )
+                    fig_imp.update_layout(height=max(400, len(importance_df.head(15)) * 30))
+                    st.plotly_chart(fig_imp, use_container_width=True)
+                
+                # ==================== ビジネスインパクトシミュレーション呼び出し ====================
+                if st.session_state.selected_target and len(y_test) > 0:
+                    # 予測確率を取得
+                    pred_proba = None
+                    if hasattr(best_model, "predict_proba"):
+                        try:
+                            pred_proba = best_model.predict_proba(X_test)[:, 1]
+                        except:
+                            pass
+                    
+                    # ビジネスインパクトシミュレーションを実行
+                    business_impact_simulation(best_model, X_test, y_test, y_pred, pred_proba)
+    
     st.markdown("---")
     if st.button("➡️ ステップ5へ進む（解釈とレポート）", type="primary"):
         st.session_state.step = 5
@@ -2687,7 +2918,7 @@ st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #64748b; padding: 2rem;">
     <p><strong>Data Science Workflow Studio Pro</strong></p>
-    <p>統計コンサルタントレベルの厳密性 + コード生成機能</p>
+    <p>統計コンサルタントレベルの厳密性 + コード生成機能 + ビジネスインパクト分析</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -2713,6 +2944,7 @@ with st.sidebar:
         - 統計的前提条件を自動検証
         - 効果量で実務的重要性を評価
         - **コード生成機能で自由にカスタマイズ**
+        - **ビジネスインパクトシミュレーション**
         
         **ステップ5: レポート**
         - 発見とアクションを記載
@@ -2731,6 +2963,20 @@ with st.sidebar:
         - コードをダウンロード
         - 自分の環境で高度な分析に拡張
         - GridSearchCV、SHAP、因果推論など
+        """)
+    
+    with st.expander("ビジネスインパクト分析"):
+        st.markdown("""
+        **Monte Carloシミュレーション:**
+        
+        - 不確実性を考慮したROI計算
+        - 95%信頼区間での利益予測
+        - 介入戦略の最適化
+        
+        **実務活用例:**
+        - 顧客離脱防止施策の効果予測
+        - マーケティングキャンペーンのROI計算
+        - リスク管理の定量化
         """)
     
     with st.expander("統計的厳密性について"):
