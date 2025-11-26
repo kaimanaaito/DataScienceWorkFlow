@@ -1981,23 +1981,30 @@ print(model.summary())
                 st.success("✅ 回帰分析が完了しました")
                 
                 # ==================== ビジネスインパクトシミュレーション ====================
+                               
                 st.markdown("---")
-                st.markdown("### 💰 ビジネスインパクトシミュレーション")
-                
-                # 現在のモデル情報を使用してシミュレーションを実行
-                if st.session_state.current_model is not None:
-                    # 予測確率を取得（回帰分析の場合は予測値を確率として扱う）
-                    pred_proba = st.session_state.current_y_pred
-                    pred_proba = (pred_proba - pred_proba.min()) / (pred_proba.max() - pred_proba.min() + 1e-8)
-                    
-                    # ビジネスインパクトシミュレーションを実行
+                st.markdown("### ビジネスインパクトシミュレーション（自動実行＋回帰対応）")
+                st.info("回帰モデルでも予測値が高い＝リスクが高いと解釈し、離脱防止施策のROIをMonte Carloシミュレーションで計算します")
+
+                if (st.session_state.current_model is not None and 
+                    st.session_state.current_y_pred is not None and 
+                    st.session_state.current_X_test is not None and 
+                    st.session_state.current_y_test is not None):
+
+                    # 回帰の予測値を0～1に正規化 → 「擬似離脱確率」として使用
+                    y_pred_raw = np.array(st.session_state.current_y_pred)
+                    pred_proba_sim = (y_pred_raw - y_pred_raw.min()) / (y_pred_raw.max() - y_pred_raw.min() + 1e-12)
+
+                    # ここで関数を「呼び出すだけ」で中身が全部表示される（ボタン不要で即表示）
                     business_impact_simulation(
-                        st.session_state.current_model,
-                        st.session_state.current_X_test,
-                        st.session_state.current_y_test,
-                        st.session_state.current_y_pred,
-                        pred_proba
+                        model=st.session_state.current_model,
+                        X_test=st.session_state.current_X_test,
+                        y_test=st.session_state.current_y_test,
+                        y_pred=st.session_state.current_y_pred,
+                        pred_proba=pred_proba_sim
                     )
+                else:
+                    st.warning("モデルがまだ実行されていません。「回帰分析実行」を先に押してください")
     
     # 予測モデル（機械学習）
     elif analysis_type == "🎯 予測モデル（機械学習）":
@@ -3081,4 +3088,5 @@ with st.sidebar:
         **Cohen's f²**: 効果の大きさ
         - 小: 0.02, 中: 0.15, 大: 0.35
         """)
+
 
