@@ -131,6 +131,14 @@ if 'diagnostics_results' not in st.session_state:
     st.session_state.diagnostics_results = None
 if 'best_model' not in st.session_state:
     st.session_state.best_model = None
+if 'current_model' not in st.session_state:
+    st.session_state.current_model = None
+if 'current_X_test' not in st.session_state:
+    st.session_state.current_X_test = None
+if 'current_y_test' not in st.session_state:
+    st.session_state.current_y_test = None
+if 'current_y_pred' not in st.session_state:
+    st.session_state.current_y_pred = None
 
 # ==================== 統計的厳密性のための関数 ====================
 
@@ -554,7 +562,7 @@ def business_impact_simulation(model, X_test, y_test, y_pred, pred_proba=None):
         top_pct = st.slider("介入対象（離脱確率上位何％）", 1, 50, 10) / 100
         n_simulations = st.number_input("Monte Carloシミュレーション回数", value=1000, step=100)
     
-    if st.button("🔥 インパクト計算実行", type="primary"):
+    if st.button("🔥 インパクト計算実行", type="primary", key="impact_calc"):
         
         # 予測確率を取得（分類の場合想定）
         if pred_proba is None:
@@ -1419,6 +1427,12 @@ elif st.session_state.step == 4:
                 rmse = np.sqrt(mean_squared_error(y_test, y_pred))
                 mae = mean_absolute_error(y_test, y_pred)
                 
+                # モデル情報をセッションステートに保存
+                st.session_state.current_model = model_sm
+                st.session_state.current_X_test = X_test
+                st.session_state.current_y_test = y_test
+                st.session_state.current_y_pred = y_pred
+                
                 st.markdown("---")
                 st.markdown("## 📊 回帰分析結果")
                 
@@ -1965,6 +1979,25 @@ print(model.summary())
                     """)
                 
                 st.success("✅ 回帰分析が完了しました")
+                
+                # ==================== ビジネスインパクトシミュレーション ====================
+                st.markdown("---")
+                st.markdown("### 💰 ビジネスインパクトシミュレーション")
+                
+                # 現在のモデル情報を使用してシミュレーションを実行
+                if st.session_state.current_model is not None:
+                    # 予測確率を取得（回帰分析の場合は予測値を確率として扱う）
+                    pred_proba = st.session_state.current_y_pred
+                    pred_proba = (pred_proba - pred_proba.min()) / (pred_proba.max() - pred_proba.min() + 1e-8)
+                    
+                    # ビジネスインパクトシミュレーションを実行
+                    business_impact_simulation(
+                        st.session_state.current_model,
+                        st.session_state.current_X_test,
+                        st.session_state.current_y_test,
+                        st.session_state.current_y_pred,
+                        pred_proba
+                    )
     
     # 予測モデル（機械学習）
     elif analysis_type == "🎯 予測モデル（機械学習）":
@@ -2017,6 +2050,12 @@ print(model.summary())
                 
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_test)
+                
+                # モデル情報をセッションステートに保存
+                st.session_state.current_model = model
+                st.session_state.current_X_test = X_test
+                st.session_state.current_y_test = y_test
+                st.session_state.current_y_pred = y_pred
                 
                 st.markdown("---")
                 st.markdown("## 📊 モデル評価結果")
@@ -2509,6 +2548,29 @@ plt.show()
                     """)
                 
                 st.success("✅ 予測モデルの学習が完了しました")
+                
+                # ==================== ビジネスインパクトシミュレーション ====================
+                st.markdown("---")
+                st.markdown("### 💰 ビジネスインパクトシミュレーション")
+                
+                # 現在のモデル情報を使用してシミュレーションを実行
+                if st.session_state.current_model is not None:
+                    # 予測確率を取得
+                    pred_proba = None
+                    if hasattr(st.session_state.current_model, "predict_proba"):
+                        try:
+                            pred_proba = st.session_state.current_model.predict_proba(st.session_state.current_X_test)[:, 1]
+                        except:
+                            pass
+                    
+                    # ビジネスインパクトシミュレーションを実行
+                    business_impact_simulation(
+                        st.session_state.current_model,
+                        st.session_state.current_X_test,
+                        st.session_state.current_y_test,
+                        st.session_state.current_y_pred,
+                        pred_proba
+                    )
     
     # ==================== 自動最適化分析（ビジネスインパクト統合版） ====================
     elif analysis_type in ["🚀 回帰分析（自動最適化）", "🤖 予測モデル（自動チューニング）"]:
@@ -2575,6 +2637,11 @@ plt.show()
                 best_model = grid_search.best_estimator_
                 y_pred = best_model.predict(X_test)
                 
+                # モデル情報をセッションステートに保存
+                st.session_state.current_model = best_model
+                st.session_state.current_X_test = X_test
+                st.session_state.current_y_test = y_test
+                st.session_state.current_y_pred = y_pred
                 st.session_state.best_model = best_model
                 
                 st.markdown("---")
@@ -2611,17 +2678,19 @@ plt.show()
                     st.plotly_chart(fig_imp, use_container_width=True)
                 
                 # ==================== ビジネスインパクトシミュレーション呼び出し ====================
-                if st.session_state.selected_target and len(y_test) > 0:
-                    # 予測確率を取得
-                    pred_proba = None
-                    if hasattr(best_model, "predict_proba"):
-                        try:
-                            pred_proba = best_model.predict_proba(X_test)[:, 1]
-                        except:
-                            pass
-                    
-                    # ビジネスインパクトシミュレーションを実行
-                    business_impact_simulation(best_model, X_test, y_test, y_pred, pred_proba)
+                st.markdown("---")
+                st.markdown("### 💰 ビジネスインパクトシミュレーション")
+                
+                # 予測確率を取得
+                pred_proba = None
+                if hasattr(best_model, "predict_proba"):
+                    try:
+                        pred_proba = best_model.predict_proba(X_test)[:, 1]
+                    except:
+                        pass
+                
+                # ビジネスインパクトシミュレーションを実行
+                business_impact_simulation(best_model, X_test, y_test, y_pred, pred_proba)
     
     st.markdown("---")
     if st.button("➡️ ステップ5へ進む（解釈とレポート）", type="primary"):
