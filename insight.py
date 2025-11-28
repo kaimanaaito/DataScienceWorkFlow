@@ -627,6 +627,10 @@ def business_impact_simulation(model, X_test, y_test, y_pred, pred_proba=None):
         else:
             st.markdown(f'<div class="impact-negative">⚠️ 上位{top_pct*100:.0f}%介入では、現状のパラメータでは利益創出が困難です。コスト削減または成功率向上を検討してください。</div>', unsafe_allow_html=True)
         
+        # この部分を追加
+        st.markdown("---")
+        st.success("✅ ビジネスインパクトシミュレーションが完了しました")
+        
         return {
             'mean_net_savings': mean_net,
             'mean_roi': mean_roi,
@@ -1606,405 +1610,30 @@ elif st.session_state.step == 4:
                     'mae': mae
                 }
                 
-                # ==================== コード生成機能 ====================
-                st.markdown("---")
-                st.markdown("### 💻 この分析を再現するコード")
-                st.info("上級者向け：ここまでの分析を実行可能なPythonコードとして出力します")
-                
-                with st.expander("📝 Python コードを生成・ダウンロード", expanded=False):
-                    generated_code = f'''"""
-自動生成された回帰分析コード
-生成日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-目的変数: {target}
-説明変数: {len(selected_features)}個
-モデルタイプ: {model_type}
-"""
-
-import pandas as pd
-import numpy as np
-from scipy import stats
-import statsmodels.api as sm
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-from statsmodels.stats.diagnostic import het_breuschpagan, linear_rainbow
-from statsmodels.stats.stattools import durbin_watson, jarque_bera
-from sklearn.model_selection import train_test_split, cross_validate, KFold
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# データ読み込み（※ファイル名を変更してください）
-df = pd.read_csv('your_data.csv')
-
-print(f"データサイズ: {{df.shape[0]}}行 × {{df.shape[1]}}列")
-
-# 前処理（欠損値削除）
-df_clean = df[['{target}'] + {selected_features}].dropna()
-print(f"前処理後: {{df_clean.shape[0]}}行")
-
-# データ分割
-X = df_clean{selected_features}
-y = df_clean['{target}']
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, 
-    test_size={test_size}, 
-    random_state=42
-)
-
-print(f"訓練データ: {{X_train.shape[0]}}行")
-print(f"テストデータ: {{X_test.shape[0]}}行")
-
-# モデル構築
-'''
-                    
-                    if model_type == "通常の線形回帰（OLS）":
-                        generated_code += '''
-# OLS回帰（statsmodels）
-X_train_sm = sm.add_constant(X_train)
-X_test_sm = sm.add_constant(X_test)
-
-model = sm.OLS(y_train, X_train_sm).fit()
-y_pred = model.predict(X_test_sm)
-'''
-                    elif model_type == "Ridge回帰（正則化）":
-                        generated_code += f'''
-# Ridge回帰
-model_sklearn = Ridge(alpha=1.0)
-model_sklearn.fit(X_train, y_train)
-y_pred = model_sklearn.predict(X_test)
-
-# statsmodelsモデルも作成（診断用）
-X_train_sm = sm.add_constant(X_train)
-model = sm.OLS(y_train, X_train_sm).fit()
-'''
-                    else:
-                        generated_code += f'''
-# Lasso回帰
-model_sklearn = Lasso(alpha=1.0)
-model_sklearn.fit(X_train, y_train)
-y_pred = model_sklearn.predict(X_test)
-
-# statsmodelsモデルも作成（診断用）
-X_train_sm = sm.add_constant(X_train)
-model = sm.OLS(y_train, X_train_sm).fit()
-'''
-                    
-                    generated_code += f'''
-
-# モデル評価
-r2 = r2_score(y_test, y_pred)
-rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-mae = mean_absolute_error(y_test, y_pred)
-
-print("\\n=== モデル性能 ===")
-print(f"R²: {{r2:.4f}}")
-print(f"調整済みR²: {{model.rsquared_adj:.4f}}")
-print(f"RMSE: {{rmse:.4f}}")
-print(f"MAE: {{mae:.4f}}")
-
-# 回帰係数
-print("\\n=== 回帰係数 ===")
-coef_df = pd.DataFrame({{
-    '変数': ['切片'] + list(X_train.columns),
-    '係数': model.params.values,
-    'p値': model.pvalues.values
-}})
-print(coef_df.to_string(index=False))
-
-# 統計的診断
-residuals = model.resid
-
-# 線形性（Rainbow Test）
-try:
-    rainbow_stat, rainbow_p = linear_rainbow(model)
-    print(f"\\n線形性（Rainbow Test）: p={{rainbow_p:.4f}}")
-    if rainbow_p > 0.05:
-        print("  ✓ 線形関係が適切")
-    else:
-        print("  ✗ 非線形性の可能性あり")
-except:
-    print("\\n線形性検定: 計算不可")
-
-# 等分散性（Breusch-Pagan Test）
-try:
-    X_train_sm = sm.add_constant(X_train)
-    bp_stat, bp_p, _, _ = het_breuschpagan(residuals, X_train_sm)
-    print(f"\\n等分散性（Breusch-Pagan）: p={{bp_p:.4f}}")
-    if bp_p > 0.05:
-        print("  ✓ 等分散性あり")
-    else:
-        print("  ✗ 不等分散（WLS回帰を検討）")
-except:
-    print("\\n等分散性検定: 計算不可")
-
-# 正規性（Jarque-Bera Test）
-try:
-    jb_stat, jb_p, skew, kurtosis = jarque_bera(residuals)
-    print(f"\\n正規性（Jarque-Bera）: p={{jb_p:.4f}}")
-    print(f"  歪度: {{skew:.4f}}, 尖度: {{kurtosis:.4f}}")
-    if jb_p > 0.05:
-        print("  ✓ 正規分布に従う")
-    else:
-        print("  ✗ 正規性違反")
-except:
-    print("\\n正規性検定: 計算不可")
-
-# 自己相関（Durbin-Watson）
-try:
-    dw_stat = durbin_watson(residuals)
-    print(f"\\n自己相関（Durbin-Watson）: {{dw_stat:.4f}}")
-    if 1.5 < dw_stat < 2.5:
-        print("  ✓ 自己相関なし")
-    else:
-        print("  ✗ 自己相関の可能性")
-except:
-    print("\\n自己相関検定: 計算不可")
-
-# 多重共線性（VIF）
-try:
-    vif_data = pd.DataFrame()
-    vif_data["変数"] = X_train.columns
-    vif_data["VIF"] = [variance_inflation_factor(X_train.values, i) 
-                       for i in range(len(X_train.columns))]
-    
-    print("\\n=== 多重共線性（VIF） ===")
-    print(vif_data.to_string(index=False))
-    
-    if (vif_data['VIF'] < 10).all():
-        print("  ✓ 多重共線性なし（VIF<10）")
-    else:
-        print("  ✗ 多重共線性あり（Ridge/Lasso回帰を検討）")
-except:
-    print("\\n多重共線性計算: 計算不可")
-
-# 効果量の計算
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X_train)
-X_scaled_df = pd.DataFrame(X_scaled, columns=X_train.columns)
-X_scaled_with_const = sm.add_constant(X_scaled_df)
-model_scaled = sm.OLS(y_train, X_scaled_with_const).fit()
-
-beta_df = pd.DataFrame({{
-    '変数': X_train.columns,
-    '標準化係数（Beta）': model_scaled.params[1:].values
-}}).sort_values('標準化係数（Beta）', key=abs, ascending=False)
-
-print("\\n=== 標準化係数（効果の大きさ）===")
-print(beta_df.to_string(index=False))
-
-# Cohen's f²
-full_r2 = model.rsquared
-if full_r2 < 1:
-    cohens_f2 = full_r2 / (1 - full_r2)
-    if cohens_f2 < 0.02:
-        interpretation = "小さい効果"
-    elif cohens_f2 < 0.15:
-        interpretation = "中程度の効果"
-    elif cohens_f2 < 0.35:
-        interpretation = "大きい効果"
-    else:
-        interpretation = "非常に大きい効果"
-    
-    print(f"\\nCohen's f²: {{cohens_f2:.4f}} ({{interpretation}})")
-
-# クロスバリデーション
-print("\\n=== クロスバリデーション ===")
-cv_model = LinearRegression()
-scoring = {{
-    'r2': 'r2',
-    'neg_mse': 'neg_mean_squared_error',
-    'neg_mae': 'neg_mean_absolute_error'
-}}
-
-cv_results = cross_validate(
-    cv_model, X, y,
-    cv=KFold(n_splits={cv_folds}, shuffle=True, random_state=42),
-    scoring=scoring,
-    return_train_score=True,
-    n_jobs=-1
-)
-
-train_r2 = cv_results['train_r2'].mean()
-test_r2 = cv_results['test_r2'].mean()
-overfit_gap = train_r2 - test_r2
-
-print(f"訓練R²（平均）: {{train_r2:.4f}}")
-print(f"テストR²（平均）: {{test_r2:.4f}} ± {{cv_results['test_r2'].std():.4f}}")
-print(f"過学習ギャップ: {{overfit_gap:.4f}}")
-
-if overfit_gap > 0.1:
-    print("  ✗ 過学習の兆候あり（正則化を検討）")
-else:
-    print("  ✓ 過学習なし")
-
-# 可視化
-fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-
-# 予測vs実測
-axes[0, 0].scatter(y_test, y_pred, alpha=0.6)
-axes[0, 0].plot([y_test.min(), y_test.max()], 
-                [y_test.min(), y_test.max()], 
-                'r--', lw=2)
-axes[0, 0].set_xlabel('実測値')
-axes[0, 0].set_ylabel('予測値')
-axes[0, 0].set_title('実測値 vs 予測値')
-
-# 残差プロット
-axes[0, 1].scatter(y_pred, y_test - y_pred, alpha=0.6)
-axes[0, 1].axhline(y=0, color='r', linestyle='--')
-axes[0, 1].set_xlabel('予測値')
-axes[0, 1].set_ylabel('残差')
-axes[0, 1].set_title('残差プロット')
-
-# 残差のヒストグラム
-axes[1, 0].hist(residuals, bins=30, edgecolor='black')
-axes[1, 0].set_xlabel('残差')
-axes[1, 0].set_ylabel('頻度')
-axes[1, 0].set_title('残差の分布')
-
-# Q-Qプロット
-from scipy import stats as sp_stats
-sp_stats.probplot(residuals, dist="norm", plot=axes[1, 1])
-axes[1, 1].set_title('Q-Qプロット（正規性確認）')
-
-plt.tight_layout()
-plt.savefig('regression_diagnostics.png', dpi=300, bbox_inches='tight')
-print("\\n可視化を 'regression_diagnostics.png' として保存しました")
-plt.show()
-
-# 詳細な統計情報
-print("\\n" + "="*60)
-print("詳細な統計情報")
-print("="*60)
-print(model.summary())
-
-# ここから自由にカスタマイズ可能
-# 例：
-# - 交互作用項の追加: X['age_income'] = X['age'] * X['income']
-# - 非線形項: X['age_squared'] = X['age'] ** 2
-# - ロバスト回帰: from statsmodels.robust.robust_linear_model import RLM
-# - WLS回帰: sm.WLS(y, X, weights=...)
-# - 予測区間: predictions.summary_frame(alpha=0.05)
-'''
-                    
-                    st.code(generated_code, language='python')
-                    
-                    col_dl1, col_dl2, col_dl3 = st.columns(3)
-                    
-                    with col_dl1:
-                        st.download_button(
-                            "💾 .py ファイルとして保存",
-                            data=generated_code,
-                            file_name=f"regression_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py",
-                            mime="text/x-python",
-                            type="primary"
-                        )
-                    
-                    with col_dl2:
-                        notebook_content = {
-                            "cells": [
-                                {
-                                    "cell_type": "markdown",
-                                    "metadata": {},
-                                    "source": [
-                                        f"# 回帰分析レポート\n",
-                                        f"**生成日時**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n",
-                                        f"**目的変数**: {target}\n",
-                                        f"**説明変数数**: {len(selected_features)}個\n",
-                                        f"**モデル**: {model_type}"
-                                    ]
-                                },
-                                {
-                                    "cell_type": "code",
-                                    "execution_count": None,
-                                    "metadata": {},
-                                    "outputs": [],
-                                    "source": generated_code.split('\n')
-                                }
-                            ],
-                            "metadata": {
-                                "kernelspec": {
-                                    "display_name": "Python 3",
-                                    "language": "python",
-                                    "name": "python3"
-                                },
-                                "language_info": {
-                                    "name": "python",
-                                    "version": "3.8.0"
-                                }
-                            },
-                            "nbformat": 4,
-                            "nbformat_minor": 4
-                        }
-                        
-                        notebook_json = json.dumps(notebook_content, indent=2)
-                        
-                        st.download_button(
-                            "📓 Jupyter Notebook として保存",
-                            data=notebook_json,
-                            file_name=f"analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.ipynb",
-                            mime="application/json",
-                            type="primary"
-                        )
-                    
-                    with col_dl3:
-                        analysis_data = regression_df[[target] + selected_features]
-                        csv_data = analysis_data.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            "📊 分析データ（CSV）を保存",
-                            data=csv_data,
-                            file_name=f"analysis_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv"
-                        )
-                    
-                    st.markdown("---")
-                    st.success("""
-                    ✅ **生成されたコードの使い方**:
-                    1. `.py`ファイルをダウンロードしてPython環境で実行
-                    2. Jupyter Notebookとしてダウンロードしてブラウザで開く
-                    3. コードをコピーして自由にカスタマイズ
-                    4. `your_data.csv`の部分を実際のファイル名に変更
-                    """)
-                    
-                    st.info("""
-                    💡 **上級者向けカスタマイズ例**:
-                    - 交互作用項の追加: `X['age_income'] = X['age'] * X['income']`
-                    - 非線形項: `X['age_squared'] = X['age'] ** 2`
-                    - ロバスト回帰: `from statsmodels.robust.robust_linear_model import RLM`
-                    - WLS回帰（不等分散対応）: `sm.WLS(y, X, weights=...)`
-                    - 予測区間の計算: `predictions.summary_frame(alpha=0.05)`
-                    """)
-                
                 st.success("✅ 回帰分析が完了しました")
                 
                 # ==================== ビジネスインパクトシミュレーション ====================
-                               
                 st.markdown("---")
-                st.markdown("### ビジネスインパクトシミュレーション（自動実行＋回帰対応）")
-                st.info("回帰モデルでも予測値が高い＝リスクが高いと解釈し、離脱防止施策のROIをMonte Carloシミュレーションで計算します")
-
-                if (st.session_state.current_model is not None and 
-                    st.session_state.current_y_pred is not None and 
-                    st.session_state.current_X_test is not None and 
-                    st.session_state.current_y_test is not None):
-
-                    # 回帰の予測値を0～1に正規化 → 「擬似離脱確率」として使用
-                    y_pred_raw = np.array(st.session_state.current_y_pred)
-                    pred_proba_sim = (y_pred_raw - y_pred_raw.min()) / (y_pred_raw.max() - y_pred_raw.min() + 1e-12)
-
-                    # ここで関数を「呼び出すだけ」で中身が全部表示される（ボタン不要で即表示）
-                    business_impact_simulation(
-                        model=st.session_state.current_model,
-                        X_test=st.session_state.current_X_test,
-                        y_test=st.session_state.current_y_test,
-                        y_pred=st.session_state.current_y_pred,
-                        pred_proba=pred_proba_sim
+                st.markdown("### 💰 ビジネスインパクトシミュレーション")
+                
+                st.info("💡 この機能を使用するには、下のパラメータを設定して「インパクト計算実行」ボタンをクリックしてください")
+                
+                # 現在のモデル情報を使用してシミュレーションを実行
+                if st.session_state.current_model is not None:
+                    # 予測確率を取得（回帰分析の場合は予測値を確率として扱う）
+                    pred_proba = st.session_state.current_y_pred
+                    pred_proba_normalized = (pred_proba - pred_proba.min()) / (pred_proba.max() - pred_proba.min() + 1e-8)
+                    
+                    # ビジネスインパクトシミュレーションを実行
+                    impact_result = business_impact_simulation(
+                        st.session_state.current_model,
+                        st.session_state.current_X_test,
+                        st.session_state.current_y_test,
+                        st.session_state.current_y_pred,
+                        pred_proba_normalized
                     )
                 else:
-                    st.warning("モデルがまだ実行されていません。「回帰分析実行」を先に押してください")
+                    st.warning("⚠️ モデル情報が見つかりません。分析を再実行してください。")
     
     # 予測モデル（機械学習）
     elif analysis_type == "🎯 予測モデル（機械学習）":
@@ -2195,370 +1824,13 @@ print(model.summary())
                     - 定期的にモデルを再学習して精度を維持
                     """)
                 
-                # ==================== 機械学習用コード生成 ====================
-                st.markdown("---")
-                st.markdown("### 💻 この予測モデルを再現するコード")
-                
-                with st.expander("📝 Python コードを生成・ダウンロード", expanded=False):
-                    task_label = "分類" if is_classification else "回帰"
-                    
-                    ml_code = f'''"""
-自動生成された機械学習{task_label}コード
-生成日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-タスク: {task_label}
-モデル: {ml_model}
-説明変数: {len(selected_features)}個
-"""
-
-import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split, cross_validate, KFold
-from sklearn.metrics import '''
-                    
-                    if is_classification:
-                        ml_code += '''classification_report, confusion_matrix, precision_score, recall_score, f1_score, roc_auc_score
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-'''
-                    else:
-                        ml_code += '''mean_squared_error, r2_score, mean_absolute_error
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LinearRegression
-'''
-                    
-                    ml_code += f'''from sklearn.inspection import permutation_importance
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# データ読み込み
-df = pd.read_csv('your_data.csv')
-
-# 欠損値削除
-df_clean = df[['{target}'] + {selected_features}].dropna()
-print(f"データサイズ: {{df_clean.shape[0]}}行")
-
-# データ分割
-X = df_clean{selected_features}
-y = df_clean['{target}']
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y,
-    test_size={test_size},
-    random_state={random_state}
-)
-
-print(f"訓練: {{X_train.shape[0]}}行, テスト: {{X_test.shape[0]}}行")
-
-# モデル構築
-'''
-                    
-                    if is_classification:
-                        if ml_model == "ランダムフォレスト分類":
-                            ml_code += f'''
-model = RandomForestClassifier(
-    n_estimators=100,
-    random_state={random_state},
-    n_jobs=-1
-)
-'''
-                        else:
-                            ml_code += f'''
-model = LogisticRegression(
-    max_iter=1000,
-    random_state={random_state},
-    n_jobs=-1
-)
-'''
-                    else:
-                        if ml_model == "ランダムフォレスト回帰":
-                            ml_code += f'''
-model = RandomForestRegressor(
-    n_estimators=100,
-    random_state={random_state},
-    n_jobs=-1
-)
-'''
-                        else:
-                            ml_code += '''
-model = LinearRegression(n_jobs=-1)
-'''
-                    
-                    ml_code += '''
-# モデル学習
-model.fit(X_train, y_train)
-
-# 予測
-y_pred = model.predict(X_test)
-
-# モデル評価
-'''
-                    
-                    if is_classification:
-                        ml_code += '''
-from sklearn.metrics import accuracy_score
-
-accuracy = accuracy_score(y_test, y_pred)
-precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-
-print("\\n=== 分類性能 ===")
-print(f"Accuracy: {accuracy:.4f}")
-print(f"Precision: {precision:.4f}")
-print(f"Recall: {recall:.4f}")
-print(f"F1スコア: {f1:.4f}")
-
-# 混同行列
-cm = confusion_matrix(y_test, y_pred)
-print("\\n混同行列:")
-print(cm)
-
-# 詳細レポート
-print("\\n詳細な分類レポート:")
-print(classification_report(y_test, y_pred, zero_division=0))
-
-# ROC-AUC（2値分類の場合）
-if hasattr(model, 'predict_proba') and len(np.unique(y_test)) == 2:
-    y_pred_proba = model.predict_proba(X_test)[:, 1]
-    roc_auc = roc_auc_score(y_test, y_pred_proba)
-    print(f"\\nROC-AUC: {roc_auc:.4f}")
-'''
-                    else:
-                        ml_code += '''
-r2 = r2_score(y_test, y_pred)
-rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-mae = mean_absolute_error(y_test, y_pred)
-
-print("\\n=== 回帰性能 ===")
-print(f"R²スコア: {r2:.4f}")
-print(f"RMSE: {rmse:.4f}")
-print(f"MAE: {mae:.4f}")
-'''
-                    
-                    ml_code += f'''
-# クロスバリデーション
-scoring = '''
-                    
-                    if is_classification:
-                        ml_code += '''{'accuracy': 'accuracy', 'f1': 'f1_weighted'}
-'''
-                    else:
-                        ml_code += '''{'r2': 'r2', 'neg_mse': 'neg_mean_squared_error'}
-'''
-                    
-                    ml_code += f'''
-cv_results = cross_validate(
-    model, X, y,
-    cv=KFold(n_splits={cv_folds if enable_cv else 5}, shuffle=True, random_state={random_state}),
-    scoring=scoring,
-    return_train_score=True,
-    n_jobs=-1
-)
-
-print("\\n=== クロスバリデーション結果 ===")
-'''
-                    
-                    if is_classification:
-                        ml_code += '''
-print(f"訓練Accuracy（平均）: {cv_results['train_accuracy'].mean():.4f}")
-print(f"テストAccuracy（平均）: {cv_results['test_accuracy'].mean():.4f} ± {cv_results['test_accuracy'].std():.4f}")
-'''
-                    else:
-                        ml_code += '''
-print(f"訓練R²（平均）: {cv_results['train_r2'].mean():.4f}")
-print(f"テストR²（平均）: {cv_results['test_r2'].mean():.4f} ± {cv_results['test_r2'].std():.4f}")
-
-overfit_gap = cv_results['train_r2'].mean() - cv_results['test_r2'].mean()
-if overfit_gap > 0.1:
-    print("  ⚠️ 過学習の兆候あり")
-else:
-    print("  ✓ 過学習なし")
-'''
-                    
-                    ml_code += '''
-# 特徴量重要度
-if hasattr(model, 'feature_importances_'):
-    importance_df = pd.DataFrame({
-        '変数': X.columns,
-        '重要度': model.feature_importances_
-    }).sort_values('重要度', ascending=False)
-    
-    print("\\n=== 特徴量重要度（上位10） ===")
-    print(importance_df.head(10).to_string(index=False))
-    
-    # 可視化
-    plt.figure(figsize=(10, 6))
-    plt.barh(importance_df['変数'].head(15), importance_df['重要度'].head(15))
-    plt.xlabel('重要度')
-    plt.title('特徴量重要度（Top 15）')
-    plt.gca().invert_yaxis()
-    plt.tight_layout()
-    plt.savefig('feature_importance.png', dpi=300, bbox_inches='tight')
-    print("\\n特徴量重要度を 'feature_importance.png' に保存しました")
-    plt.show()
-
-# Permutation Importance
-print("\\n=== Permutation Importance（計算中...）===")
-perm_importance = permutation_importance(
-    model, X_test, y_test,
-    n_repeats=10,
-    random_state=''' + str(random_state) + ''',
-    n_jobs=-1
-)
-
-perm_df = pd.DataFrame({
-    '変数': X.columns,
-    '重要度': perm_importance.importances_mean,
-    '標準偏差': perm_importance.importances_std
-}).sort_values('重要度', ascending=False)
-
-print("\\nPermutation Importance（上位10）:")
-print(perm_df.head(10).to_string(index=False))
-
-# 予測結果の可視化
-'''
-                    
-                    if not is_classification:
-                        ml_code += '''
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-# 予測vs実測
-axes[0].scatter(y_test, y_pred, alpha=0.6)
-axes[0].plot([y_test.min(), y_test.max()], 
-             [y_test.min(), y_test.max()], 
-             'r--', lw=2)
-axes[0].set_xlabel('実測値')
-axes[0].set_ylabel('予測値')
-axes[0].set_title('実測値 vs 予測値')
-
-# 残差プロット
-residuals = y_test - y_pred
-axes[1].scatter(y_pred, residuals, alpha=0.6)
-axes[1].axhline(y=0, color='r', linestyle='--')
-axes[1].set_xlabel('予測値')
-axes[1].set_ylabel('残差')
-axes[1].set_title('残差プロット')
-
-plt.tight_layout()
-plt.savefig('prediction_results.png', dpi=300, bbox_inches='tight')
-print("\\n予測結果を 'prediction_results.png' に保存しました")
-plt.show()
-'''
-                    else:
-                        ml_code += '''
-# 混同行列の可視化
-plt.figure(figsize=(8, 6))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
-plt.xlabel('予測')
-plt.ylabel('実測')
-plt.title('混同行列')
-plt.tight_layout()
-plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
-print("\\n混同行列を 'confusion_matrix.png' に保存しました")
-plt.show()
-'''
-                    
-                    ml_code += '''
-# ここから自由にカスタマイズ可能
-# 例：
-# - ハイパーパラメータチューニング（GridSearchCV）
-# - アンサンブル学習（VotingRegressor/Classifier）
-# - SHAP値による解釈性向上
-# - 新しいデータでの予測
-# - モデルの保存: joblib.dump(model, 'model.pkl')
-'''
-                    
-                    st.code(ml_code, language='python')
-                    
-                    col_ml1, col_ml2, col_ml3 = st.columns(3)
-                    
-                    with col_ml1:
-                        st.download_button(
-                            "💾 .py ファイルとして保存",
-                            data=ml_code,
-                            file_name=f"ml_{task_label}_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py",
-                            mime="text/x-python",
-                            type="primary"
-                        )
-                    
-                    with col_ml2:
-                        notebook_ml = {
-                            "cells": [
-                                {
-                                    "cell_type": "markdown",
-                                    "metadata": {},
-                                    "source": [
-                                        f"# 機械学習{task_label}分析\n",
-                                        f"**生成日時**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n",
-                                        f"**モデル**: {ml_model}\n",
-                                        f"**説明変数数**: {len(selected_features)}個"
-                                    ]
-                                },
-                                {
-                                    "cell_type": "code",
-                                    "execution_count": None,
-                                    "metadata": {},
-                                    "outputs": [],
-                                    "source": ml_code.split('\n')
-                                }
-                            ],
-                            "metadata": {
-                                "kernelspec": {
-                                    "display_name": "Python 3",
-                                    "language": "python",
-                                    "name": "python3"
-                                },
-                                "language_info": {
-                                    "name": "python",
-                                    "version": "3.8.0"
-                                }
-                            },
-                            "nbformat": 4,
-                            "nbformat_minor": 4
-                        }
-                        
-                        notebook_ml_json = json.dumps(notebook_ml, indent=2)
-                        
-                        st.download_button(
-                            "📓 Jupyter Notebook として保存",
-                            data=notebook_ml_json,
-                            file_name=f"ml_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.ipynb",
-                            mime="application/json",
-                            type="primary"
-                        )
-                    
-                    with col_ml3:
-                        ml_analysis_data = ml_df[[target] + selected_features]
-                        csv_ml_data = ml_analysis_data.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            "📊 分析データ（CSV）を保存",
-                            data=csv_ml_data,
-                            file_name=f"ml_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv"
-                        )
-                    
-                    st.success("""
-                    ✅ **生成されたコードで可能なこと**:
-                    - モデルの再学習と予測
-                    - ハイパーパラメータの調整
-                    - 新しいデータでの予測
-                    - モデルの保存と読み込み
-                    """)
-                    
-                    st.info("""
-                    💡 **上級者向けカスタマイズ例**:
-                    - グリッドサーチ: `GridSearchCV(model, param_grid, cv=5)`
-                    - SHAP解釈: `import shap; explainer = shap.TreeExplainer(model)`
-                    - モデル保存: `import joblib; joblib.dump(model, 'model.pkl')`
-                    - アンサンブル: `VotingRegressor([('rf', rf), ('lr', lr)])`
-                    """)
-                
                 st.success("✅ 予測モデルの学習が完了しました")
                 
                 # ==================== ビジネスインパクトシミュレーション ====================
                 st.markdown("---")
                 st.markdown("### 💰 ビジネスインパクトシミュレーション")
+                
+                st.info("💡 この機能を使用するには、下のパラメータを設定して「インパクト計算実行」ボタンをクリックしてください")
                 
                 # 現在のモデル情報を使用してシミュレーションを実行
                 if st.session_state.current_model is not None:
@@ -2567,17 +1839,24 @@ plt.show()
                     if hasattr(st.session_state.current_model, "predict_proba"):
                         try:
                             pred_proba = st.session_state.current_model.predict_proba(st.session_state.current_X_test)[:, 1]
-                        except:
-                            pass
+                        except Exception as e:
+                            st.warning(f"予測確率の取得に失敗: {e}")
+                            pred_proba = st.session_state.current_y_pred
+                            pred_proba = (pred_proba - pred_proba.min()) / (pred_proba.max() - pred_proba.min() + 1e-8)
+                    else:
+                        pred_proba = st.session_state.current_y_pred
+                        pred_proba = (pred_proba - pred_proba.min()) / (pred_proba.max() - pred_proba.min() + 1e-8)
                     
                     # ビジネスインパクトシミュレーションを実行
-                    business_impact_simulation(
+                    impact_result = business_impact_simulation(
                         st.session_state.current_model,
                         st.session_state.current_X_test,
                         st.session_state.current_y_test,
                         st.session_state.current_y_pred,
                         pred_proba
                     )
+                else:
+                    st.warning("⚠️ モデル情報が見つかりません。分析を再実行してください。")
     
     # ==================== 自動最適化分析（ビジネスインパクト統合版） ====================
     elif analysis_type in ["🚀 回帰分析（自動最適化）", "🤖 予測モデル（自動チューニング）"]:
@@ -2688,16 +1967,23 @@ plt.show()
                 st.markdown("---")
                 st.markdown("### 💰 ビジネスインパクトシミュレーション")
                 
+                st.info("💡 この機能を使用するには、下のパラメータを設定して「インパクト計算実行」ボタンをクリックしてください")
+                
                 # 予測確率を取得
                 pred_proba = None
                 if hasattr(best_model, "predict_proba"):
                     try:
                         pred_proba = best_model.predict_proba(X_test)[:, 1]
-                    except:
-                        pass
+                    except Exception as e:
+                        st.warning(f"予測確率の取得に失敗: {e}")
+                        pred_proba = y_pred
+                        pred_proba = (pred_proba - pred_proba.min()) / (pred_proba.max() - pred_proba.min() + 1e-8)
+                else:
+                    pred_proba = y_pred
+                    pred_proba = (pred_proba - pred_proba.min()) / (pred_proba.max() - pred_proba.min() + 1e-8)
                 
                 # ビジネスインパクトシミュレーションを実行
-                business_impact_simulation(best_model, X_test, y_test, y_pred, pred_proba)
+                impact_result = business_impact_simulation(best_model, X_test, y_test, y_pred, pred_proba)
     
     st.markdown("---")
     if st.button("➡️ ステップ5へ進む（解釈とレポート）", type="primary"):
@@ -2965,7 +2251,7 @@ elif st.session_state.step == 5:
     st.markdown("---")
     st.markdown("""
     <div class="success-box">
-    <h3>分析が完了しました</h3>
+    <h3>✅ 分析が完了しました</h3>
     <p>生成されたレポートを関係者と共有し、推奨アクションの実装を検討してください</p>
     </div>
     """, unsafe_allow_html=True)
@@ -3088,5 +2374,3 @@ with st.sidebar:
         **Cohen's f²**: 効果の大きさ
         - 小: 0.02, 中: 0.15, 大: 0.35
         """)
-
-
